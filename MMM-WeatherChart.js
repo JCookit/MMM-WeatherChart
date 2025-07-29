@@ -199,8 +199,9 @@ Module.register("MMM-WeatherChart", {
     },
 
     getWindDirection: function (degrees) {
-        const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", 
-                           "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+        // Unicode arrow directions - testing if font supports these glyphs
+        const directions = ["↑", "↗", "↗", "↗", "→", "↘", "↘", "↘", 
+                           "↓", "↙", "↙", "↙", "←", "↖", "↖", "↖"];
         return directions[Math.round(degrees / 22.5) % 16];
     },
 
@@ -257,83 +258,6 @@ Module.register("MMM-WeatherChart", {
         }
     },
 
-    // Calculate MarginFactors from the simultanious equations
-    //
-    // x = iconSize/2 * ((1 + x + y + z)/h)
-    // y = (dataLabelOffset + fontSize + iconSize + popSpace + windSpace) * ((1 + x + y + z)/h)
-    // z = (dataLabelOffset * 2 + fontSize * a) * ((1 + x + y + z)/h)
-    //
-    // where
-    // x is the margin on the top of Weather icons,
-    // y is the margin for the unified area above temperatures (icons + pop + wind),
-    // z is the margin between temperature and rain lines,
-    // a is 2 when dataType is hourly and show rain or snow,
-    // a is 2.5 when dataType is daily and show rain or snow,
-    // a is 1 when rain or snow is not shown.
-    getTempRainMarginFactor: function (showRain = true, iconSize = 50) {
-        // Calculate z
-        const h = parseInt(this.config.height);
-        let c1 = iconSize / 2.0;
-        c1 = c1 / (h - iconSize);
-        let c2 = this.config.datalabelsOffset + this.config.fontSize + iconSize;
-        c2 = c1 + c2;
-        c2 = c2 / (h - c2);
-        let c3;
-        let a;
-        if (showRain) {
-            if (this.config.dataType == "hourly") {
-                a = 2;
-            } else {
-                a = 2.5;
-            }
-        } else {
-            a = 1;
-        }
-        c3 = this.config.datalabelsOffset * 2 + this.config.fontSize * a;
-        let z = (c3 * (1 + c1 + c2 * c1 + c2)) / (h - (c2 + c2 * c3 + c3 + 1));
-        if (z < 0) z = 0;
-        if (showRain) z = z * 2;
-        return z;
-    },
-
-    getIconBelowMarginFactor: function (
-        z = this.getTempRainMarginFactor(),
-        showRain = true,
-        iconSize = 50
-    ) {
-        // Calculate y - unified area above temperatures
-        const h = parseInt(this.config.height);
-        let c1 = iconSize / 2.0;
-        c1 = c1 / (h - iconSize);
-        
-        // Calculate space needed for elements above temperature
-        let popSpace = this.config.showPop ? this.config.fontSize + this.config.datalabelsOffset : 0;
-        let windSpace = this.config.showWind ? this.config.fontSize + this.config.datalabelsOffset : 0;
-        
-        let c2 = this.config.datalabelsOffset + this.config.fontSize + iconSize + popSpace + windSpace;
-        c2 = c1 + c2;
-        c2 = c2 / (h - c2);
-        let y = c2 * (1 + z / 2.0);
-        if (y < 0) y = 0;
-        if (showRain) y = y * 2;
-        return y;
-    },
-
-    getIconTopMarginFactor: function (
-        y = this.getIconBelowMarginFactor(),
-        z = this.getTempRainMarginFactor(),
-        showRain = true,
-        iconSize = 50
-    ) {
-        // Calculate x
-        const h = parseInt(this.config.height);
-        let c1 = iconSize / 2.0;
-        c1 = c1 / (h - iconSize);
-        let x = c1 * (1 + (y + z) / 2.0);
-        if (x < 0) x = 0;
-        if (showRain) x = x * 2;
-        return x;
-    },
     /* scheduleUpdate()
      * Schedule next update.
      *
@@ -453,30 +377,9 @@ Module.register("MMM-WeatherChart", {
                 showRainSnow = true;
             }
         }
-        const tempRainMargin = this.getTempRainMarginFactor(showRainSnow);
-        const iconBelowMargin = this.getIconBelowMarginFactor(
-            tempRainMargin,
-            showRainSnow
-        );
-        const iconTopMargin = this.getIconTopMarginFactor(
-            iconBelowMargin,
-            tempRainMargin,
-            showRainSnow
-        );
-
-                // Calculate the unified area above temperatures with proportional buffer
-//        const tempRange = maxTemp - minTemp;
-//        const bufferSpace = Math.max(this.config.fontSize * 1.5, tempRange * 0.6); // More space below wind
-//        const aboveTemperatureArea = maxTemp + (maxTemp - minTemp) * iconBelowMargin + bufferSpace;
-
         const iconSize = 25;  // this may not be the true pixel size of the icon
         const fontSize = 16; 
         const possibleRainShowPlotPercentage = 0.4; // percentage of the plot area that is used for rain/snow data  
-
-        // Position elements dynamically based on what's enabled
-        // let currentY = aboveTemperatureArea;
-        // const iconSpacing = Math.max(this.config.fontSize * 1.5, tempRange * 0.3); // Icons need more space, proportional to temp range
-        // const textSpacing = this.config.fontSize + this.config.datalabelsOffset - 4; // Text lines need less space
 
         const topAreaInPixels = 
             (this.config.showIcon ? (iconSize*1.0 + fontSize * 0.5) : 0)
@@ -741,12 +644,7 @@ Module.register("MMM-WeatherChart", {
         let rainSnowPercentageOfWhole = (possibleRainShowPlotPercentage * temperatureAxisRange) / (calculatedMax - calculatedMin);
         console.log("[jc] rainSnowPercentageOfWhole " + rainSnowPercentageOfWhole);        
 
-        // Set Y-Axis range using the unified area approach
-        // let y1_max = aboveTemperatureArea + (maxTemp - minTemp) * iconTopMargin,
-        //     y1_min = minTemp - (maxTemp - minTemp) * tempRainMargin,
-            y2_max = Math.max(maxRain, maxSnow, this.config.rainMinHeight) * (1 / rainSnowPercentageOfWhole),
-                // Math.max(maxRain, maxSnow, this.config.rainMinHeight) *
-                // (2 + iconTopMargin + iconBelowMargin + tempRainMargin),
+        let y2_max = Math.max(maxRain, maxSnow, this.config.rainMinHeight) * (1 / rainSnowPercentageOfWhole),
             y2_min = 0,
             y3_min = minPressure - (maxPressure - minPressure) * 0.1,
             y3_max =
@@ -756,7 +654,6 @@ Module.register("MMM-WeatherChart", {
         y1_max = calculatedMax;
         y1_min = calculatedMin;
 
-//        if (showRainSnow) y1_min = y1_min - (maxTemp - minTemp) * 1.5;
         const ranges = {
             y1: {
                 min: y1_min,
@@ -868,6 +765,13 @@ Module.register("MMM-WeatherChart", {
             pops.push(data[i].pop !== undefined ? data[i].pop : null); // precipitation probability (0-1) or null if missing
             windSpeeds.push(data[i].wind_speed !== undefined ? data[i].wind_speed : null);
             windDirections.push(data[i].wind_deg !== undefined ? data[i].wind_deg : null);
+
+                        
+            // Debug wind data  
+            console.log("[Wind Debug Daily] Day " + i + ":");
+            console.log("  wind_speed: " + data[i].wind_speed + " m/s");
+            console.log("  wind_gust: " + (data[i].wind_gust || "not available") + " m/s");
+            console.log("  wind_deg: " + data[i].wind_deg + "°");
         }
 
         const minValue = this.getMin(minTemps),
@@ -890,16 +794,6 @@ Module.register("MMM-WeatherChart", {
                 showRainSnow = true;
             }
         }
-        const tempRainMargin = this.getTempRainMarginFactor(showRainSnow);
-        const iconBelowMargin = this.getIconBelowMarginFactor(
-            tempRainMargin,
-            showRainSnow
-        );
-        const iconTopMargin = this.getIconTopMarginFactor(
-            iconBelowMargin,
-            tempRainMargin,
-            showRainSnow
-        );
 
         const iconSize = 25;  // this may not be the true pixel size of the icon
         const fontSize = 16; 
@@ -937,49 +831,11 @@ Module.register("MMM-WeatherChart", {
         calculatedMin = maxValue - temperatureAxisRange;
         calculatedMax = calculatedMin + temperatureAxisRange * (1 + (topAreaInPixels / plotAreaSizeInPixels));
 
-        // calculate min and max values for the Y-axis
-        // let calculatedMin = minValue;
-        // if (showRainSnow) 
-        //     calculatedMin = calculatedMin - (maxValue - minValue) * 3.0;
-
         const PixelsToAxisUnits = temperatureAxisRange / plotAreaSizeInPixels;
-
-        // let calculatedMax = (maxValue + topAreaInPixels * PixelsToAxisUnits);
 
         console.log("[jc] calculatedMin " + calculatedMin);
         console.log("[jc] calculatedMax " + calculatedMax);
-
-
-        // Calculate the unified area above temperatures with proportional buffer
-        // const tempRange = maxValue - minValue;
-        // const bufferSpace = Math.max(this.config.fontSize, tempRange * 0.6); // Proportional to temp range
-        // const aboveTemperatureArea = maxValue + (maxValue - minValue) * iconBelowMargin + bufferSpace;
-        
-        // Position elements dynamically based on what's enabled
-        //const iconSpace = 50 * PixelsToAxisUnits;
-        //const textSpace = this.config.fontSize * PixelsToAxisUnits;
-        //const iconSpacing = Math.max(this.config.fontSize * 1.5, tempRange * 0.2); // Icons need more space, proportional to temp range
-
-        //const iconSpacing = ((iconSize * 0.5 + this.config.fontSize * 0.5) * PixelsToAxisUnits);  // next thing can start half a text line below
-        //const textSpacing = (this.config.fontSize * 1.0 * PixelsToAxisUnits); // text is drawn at center, so we need to move it half a text line below
-
-        //console.log("[jc] aboveTemperatureArea " + aboveTemperatureArea);
-
-        // console.log("[jc] minValue " + minValue);
-        // console.log("[jc] maxValue " + maxValue);
-        // maybeMin = (minValue - (maxValue - minValue) * tempRainMargin);
-        // maybeMin = maybeMin - (maxValue - minValue) * 1.5;
-
-
-        // console.log("[jc] maybeMin? " + maybeMin);
-        // console.log("[jc] tempRange " + tempRange);
-        // console.log("[jc] bufferSpace " + bufferSpace);
-
-        // console.log("[jc] iconSpacing " + iconSpacing);
-        // console.log("[jc] textSpacing " + textSpacing);
-
         console.log("[jc] PixelsToAxisUnits " + PixelsToAxisUnits);
-
 
         // Position icons at the top if enabled
         console.log("[jc] calculatedMax " + calculatedMax);
@@ -1210,12 +1066,7 @@ Module.register("MMM-WeatherChart", {
         let rainSnowPercentageOfWhole = (possibleRainShowPlotPercentage * temperatureAxisRange) / (calculatedMax - calculatedMin);
         console.log("[jc] rainSnowPercentageOfWhole " + rainSnowPercentageOfWhole);
         
-        // Set Y-Axis range using the unified area approach
-        //let y1_max = aboveTemperatureArea + (maxValue - minValue) * iconTopMargin,
-            //y1_min = minValue - (maxValue - minValue) * tempRainMargin,
-            y2_max = Math.max(maxRain, maxSnow, this.config.rainMinHeight) * (1 / rainSnowPercentageOfWhole),
-//                Math.max(maxRain, maxSnow, this.config.rainMinHeight) *
-//                (2 + (iconTopMargin + iconBelowMargin + tempRainMargin) * 2),
+        let y2_max = Math.max(maxRain, maxSnow, this.config.rainMinHeight) * (1 / rainSnowPercentageOfWhole),
             y2_min = 0,
             y3_min = minPressure - (maxPressure - minPressure) * 0.1,
             y3_max =
