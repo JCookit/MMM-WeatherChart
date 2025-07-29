@@ -53,10 +53,18 @@ Module.register("MMM-WeatherChart", {
         dailyLabel: "date",
         hourFormat: "24h",
         curveTension: 0.4,
-        datalabelsDisplay: "auto",
+        datalabelsDisplay: true,
         datalabelsOffset: 4,
         datalabelsRoundDecimalPlace: 1,
+        precipitationRoundDecimalPlace: 2,
         largeOpenWeatherIcon: false,
+        showPop: false,
+        colorPop: "rgba(255, 255, 255, 1)",
+        popRowHeight: 20,
+        showWind: false,
+        colorWind: "rgba(255, 255, 255, 1)",
+        windRowHeight: 20,
+        windUnit: "auto", // "auto", "mph", "km/h", "m/s", "knots"
     },
 
     requiresVersion: "2.15.0",
@@ -158,6 +166,44 @@ Module.register("MMM-WeatherChart", {
         return rain;
     },
 
+    formatWind: function (windSpeed, windDirection) {
+        // API returns wind speed in m/s for all unit types
+        let convertedSpeed;
+        if (this.config.windUnit === "auto") {
+            // Use same unit system as main weather data
+            if (this.config.units === "imperial") {
+                convertedSpeed = windSpeed * 2.237; // m/s to mph
+            } else if (this.config.units === "metric") {
+                convertedSpeed = windSpeed * 3.6; // m/s to km/h
+            } else {
+                convertedSpeed = windSpeed; // standard (m/s)
+            }
+        } else if (this.config.windUnit === "mph") {
+            convertedSpeed = windSpeed * 2.237;
+        } else if (this.config.windUnit === "km/h") {
+            convertedSpeed = windSpeed * 3.6;
+        } else if (this.config.windUnit === "knots") {
+            convertedSpeed = windSpeed * 1.944;
+        } else {
+            convertedSpeed = windSpeed; // m/s
+        }
+        
+        // Apply decimal precision using the general datalabels option
+        let place = 10 ** this.config.datalabelsRoundDecimalPlace;
+        let formattedSpeed = Math.round(convertedSpeed * place) / place;
+        
+        // Get wind direction
+        let direction = this.getWindDirection(windDirection);
+        
+        return formattedSpeed + " " + direction;
+    },
+
+    getWindDirection: function (degrees) {
+        const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", 
+                           "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+        return directions[Math.round(degrees / 22.5) % 16];
+    },
+
     getIconImage: function (iconId, callback) {
         let self = this;
         let iconImage = new Image();
@@ -214,12 +260,12 @@ Module.register("MMM-WeatherChart", {
     // Calculate MarginFactors from the simultanious equations
     //
     // x = iconSize/2 * ((1 + x + y + z)/h)
-    // y = (dataLabelOffset + fontSize + iconSize) * ((1 + x + y + z)/h)
+    // y = (dataLabelOffset + fontSize + iconSize + popSpace + windSpace) * ((1 + x + y + z)/h)
     // z = (dataLabelOffset * 2 + fontSize * a) * ((1 + x + y + z)/h)
     //
     // where
     // x is the margin on the top of Weather icons,
-    // y is the margin on the below of Weather icons,
+    // y is the margin for the unified area above temperatures (icons + pop + wind),
     // z is the margin between temperature and rain lines,
     // a is 2 when dataType is hourly and show rain or snow,
     // a is 2.5 when dataType is daily and show rain or snow,
@@ -255,11 +301,16 @@ Module.register("MMM-WeatherChart", {
         showRain = true,
         iconSize = 50
     ) {
-        // Calculate y
+        // Calculate y - unified area above temperatures
         const h = parseInt(this.config.height);
         let c1 = iconSize / 2.0;
         c1 = c1 / (h - iconSize);
-        let c2 = this.config.datalabelsOffset + this.config.fontSize + iconSize;
+        
+        // Calculate space needed for elements above temperature
+        let popSpace = this.config.showPop ? this.config.fontSize + this.config.datalabelsOffset : 0;
+        let windSpace = this.config.showWind ? this.config.fontSize + this.config.datalabelsOffset : 0;
+        
+        let c2 = this.config.datalabelsOffset + this.config.fontSize + iconSize + popSpace + windSpace;
         c2 = c1 + c2;
         c2 = c2 / (h - c2);
         let y = c2 * (1 + z / 2.0);
@@ -312,7 +363,10 @@ Module.register("MMM-WeatherChart", {
             nightTemps = [],
             labels = [],
             iconIDs = [],
-            pressures = [];
+            pressures = [],
+            pops = [],
+            windSpeeds = [],
+            windDirections = [];
 
         data.sort(function (a, b) {
             if (a.dt < b.dt) return -1;
@@ -372,6 +426,9 @@ Module.register("MMM-WeatherChart", {
                 snows.push(0);
             }
             iconIDs.push(iconID);
+            pops.push(data[i].pop !== undefined ? data[i].pop : null); // precipitation probability (0-1) or null if missing
+            windSpeeds.push(data[i].wind_speed || 0);
+            windDirections.push(data[i].wind_deg || 0);
         }
 
         const minTemp = this.getMin(temps),
@@ -381,7 +438,9 @@ Module.register("MMM-WeatherChart", {
             maxPressure = this.getMax(pressures),
             minPressure = this.getMin(pressures),
             iconLine = [],
-            icons = [];
+            icons = [],
+            popLine = [],
+            windLine = [];
 
         let showRainSnow = false;
         if (this.config.showRain || this.config.showSnow) {
@@ -405,11 +464,51 @@ Module.register("MMM-WeatherChart", {
             showRainSnow
         );
 
-        // Create dummy line for icons
-        for (let i = 0; i < temps.length; i++) {
-            let v = maxTemp + (maxTemp - minTemp) * iconBelowMargin;
-            iconLine.push(v);
-            icons.push(this.getIconImage(iconIDs[i]));
+                // Calculate the unified area above temperatures with proportional buffer
+        const tempRange = maxTemp - minTemp;
+        const bufferSpace = Math.max(this.config.fontSize * 1.5, tempRange * 0.6); // More space below wind
+        const aboveTemperatureArea = maxTemp + (maxTemp - minTemp) * iconBelowMargin + bufferSpace;
+        
+        // Position elements dynamically based on what's enabled
+        let currentY = aboveTemperatureArea;
+        const iconSpacing = Math.max(this.config.fontSize * 1.5, tempRange * 0.3); // Icons need more space, proportional to temp range
+        const textSpacing = this.config.fontSize + this.config.datalabelsOffset - 4; // Text lines need less space
+        
+        // Position icons at the top if enabled
+        const iconY = this.config.showIcon ? currentY : null;
+        if (this.config.showIcon) {
+            currentY -= iconSpacing;
+        }
+        
+        // Position pop below icons if enabled
+        const popY = this.config.showPop ? currentY : null;
+        if (this.config.showPop) {
+            currentY -= textSpacing;
+        }
+        
+        // Position wind below pop if enabled
+        const windY = this.config.showWind ? currentY : null;
+
+        // Create dummy line for icons (only if enabled)
+        if (this.config.showIcon) {
+            for (let i = 0; i < temps.length; i++) {
+                iconLine.push(iconY);
+                icons.push(this.getIconImage(iconIDs[i]));
+            }
+        }
+
+        // Create dummy line for precipitation probability (only if enabled)
+        if (this.config.showPop) {
+            for (let i = 0; i < temps.length; i++) {
+                popLine.push(popY);
+            }
+        }
+
+        // Create dummy line for wind (only if enabled)
+        if (this.config.showWind) {
+            for (let i = 0; i < temps.length; i++) {
+                windLine.push(windY);
+            }
         }
 
         const datasets = [];
@@ -421,9 +520,6 @@ Module.register("MMM-WeatherChart", {
                 color: this.config.color,
                 align: "top",
                 offset: this.config.datalabelsOffset,
-                font: {
-                    weight: this.config.fontWeight,
-                },
                 display: this.config.datalabelsDisplay,
                 formatter: function (value) {
                     let place = 10 ** self.config.datalabelsRoundDecimalPlace;
@@ -443,9 +539,6 @@ Module.register("MMM-WeatherChart", {
                 color: this.config.color,
                 align: "top",
                 offset: this.config.datalabelsOffset,
-                font: {
-                    weight: this.config.fontWeight,
-                },
                 display: this.config.datalabelsDisplay,
                 formatter: function (value) {
                     let place = 10 ** self.config.datalabelsRoundDecimalPlace;
@@ -466,9 +559,6 @@ Module.register("MMM-WeatherChart", {
                     color: this.config.color,
                     align: "top",
                     offset: this.config.datalabelsOffset,
-                    font: {
-                        weight: this.config.fontWeight,
-                    },
                     display: this.config.datalabelsDisplay,
                     formatter: function (value) {
                         let place =
@@ -495,6 +585,51 @@ Module.register("MMM-WeatherChart", {
                 yAxisID: "y1",
             });
         }
+        if (this.config.showPop) {
+            datasets.push({
+                label: "Precipitation Probability",
+                borderWidth: 0,
+                data: popLine,
+                pointStyle: "rect",
+                pointRadius: 0,
+                datalabels: {
+                    display: true,
+                    color: this.config.colorPop,
+                    align: "center",
+                    offset: 0,
+                    formatter: function (value, context) {
+                        let popValue = pops[context.dataIndex];
+                        if (popValue === null) return ""; // Don't show anything if data is missing
+                        let percentage = Math.round(popValue * 100);
+                        return percentage + "%";
+                    },
+                },
+                yAxisID: "y1",
+            });
+        }
+        if (this.config.showWind) {
+            let self = this;
+            datasets.push({
+                label: "Wind Speed & Direction",
+                borderWidth: 0,
+                data: windLine,
+                pointStyle: "rect",
+                pointRadius: 0,
+                datalabels: {
+                    display: true,
+                    color: this.config.colorWind,
+                    align: "center",
+                    offset: 0,
+                    formatter: function (value, context) {
+                        let windSpeedValue = windSpeeds[context.dataIndex];
+                        let windDirectionValue = windDirections[context.dataIndex];
+                        if (windSpeedValue === null) return ""; // Don't show anything if data is missing
+                        return self.formatWind(windSpeedValue, windDirectionValue);
+                    },
+                },
+                yAxisID: "y1",
+            });
+        }
         if (this.config.showRain) {
             if (this.config.showZeroRain || maxRain > 0) {
                 datasets.push({
@@ -507,13 +642,10 @@ Module.register("MMM-WeatherChart", {
                         color: this.config.color,
                         align: "top",
                         offset: this.config.datalabelsOffset,
-                        font: {
-                            weight: this.config.fontWeight,
-                        },
                         display: this.config.datalabelsDisplay,
                         formatter: function (value) {
                             let place =
-                                10 ** self.config.datalabelsRoundDecimalPlace;
+                                10 ** self.config.precipitationRoundDecimalPlace;
                             let label = Math.round(value * place) / place;
                             return self.config.showZeroRain || value > 0
                                 ? label
@@ -539,13 +671,10 @@ Module.register("MMM-WeatherChart", {
                         display: this.config.showRain ? false : true,
                         align: "top",
                         offset: this.config.datalabelsOffset,
-                        font: {
-                            weight: this.config.fontWeight,
-                        },
                         display: this.config.datalabelsDisplay,
                         formatter: function (value) {
                             let place =
-                                10 ** self.config.datalabelsRoundDecimalPlace;
+                                10 ** self.config.precipitationRoundDecimalPlace;
                             let label = Math.round(value * place) / place;
                             return self.config.showZeroSnow || value > 0
                                 ? label
@@ -564,8 +693,8 @@ Module.register("MMM-WeatherChart", {
             }
         }
 
-        // Set Y-Axis range not to overlap each other
-        let y1_max = iconLine[0] + (maxTemp - minTemp) * iconTopMargin,
+        // Set Y-Axis range using the unified area approach
+        let y1_max = aboveTemperatureArea + (maxTemp - minTemp) * iconTopMargin,
             y1_min = minTemp - (maxTemp - minTemp) * tempRainMargin,
             y2_max =
                 Math.max(maxRain, maxSnow, this.config.rainMinHeight) *
@@ -577,7 +706,7 @@ Module.register("MMM-WeatherChart", {
                 (maxPressure - minPressure) *
                     ((iconTopMargin + iconBelowMargin) / 2);
 
-        if (showRainSnow) y1_min = y1_min - (maxTemp - minTemp);
+        if (showRainSnow) y1_min = y1_min - (maxTemp - minTemp) * 1.5;
         const ranges = {
             y1: {
                 min: y1_min,
@@ -606,7 +735,10 @@ Module.register("MMM-WeatherChart", {
             snows = [],
             labels = [],
             iconIDs = [],
-            pressures = [];
+            pressures = [],
+            pops = [],
+            windSpeeds = [],
+            windDirections = [];
 
         data.sort(function (a, b) {
             if (a.dt < b.dt) return -1;
@@ -649,6 +781,9 @@ Module.register("MMM-WeatherChart", {
                 snows.push(0);
             }
             iconIDs.push(data[i].weather[0].icon);
+            pops.push(data[i].pop !== undefined ? data[i].pop : null); // precipitation probability (0-1) or null if missing
+            windSpeeds.push(data[i].wind_speed !== undefined ? data[i].wind_speed : null);
+            windDirections.push(data[i].wind_deg !== undefined ? data[i].wind_deg : null);
         }
 
         const minValue = this.getMin(minTemps),
@@ -656,7 +791,9 @@ Module.register("MMM-WeatherChart", {
             maxRain = this.getMax(rains),
             maxSnow = this.getMax(snows),
             iconLine = [],
-            icons = [];
+            icons = [],
+            popLine = [],
+            windLine = [];
 
         let showRainSnow = false;
         if (this.config.showRain || this.config.showSnow) {
@@ -680,11 +817,105 @@ Module.register("MMM-WeatherChart", {
             showRainSnow
         );
 
-        // Create dummy line for icons
-        for (let i = 0; i < minTemps.length; i++) {
-            let v = maxValue + (maxValue - minValue) * iconBelowMargin;
-            iconLine.push(v);
-            icons.push(this.getIconImage(iconIDs[i]));
+        const iconSize = 50;
+        const topAreaInPixels = 
+            (this.config.showIcon ? (iconSize*1.5 + this.config.fontSize * 1.0) : 0)
+            + (this.config.showPop ? this.config.fontSize * 1.5 : 0)
+            + (this.config.showWind ? this.config.fontSize * 1.5 : 0);
+
+        const bottomAreaInPixels =
+            this.config.fontSize;
+
+        const plotAreaSizeInPixels = parseInt(this.config.height) - topAreaInPixels - bottomAreaInPixels;
+
+        // calculate min and max values for the Y-axis
+        let calculatedMin = minValue;
+        if (showRainSnow) 
+            calculatedMin = calculatedMin - (maxValue - minValue) * 3.0;
+
+        const PixelsToAxisUnits = (maxValue - calculatedMin) / plotAreaSizeInPixels;
+
+        let calculatedMax = (maxValue + topAreaInPixels * PixelsToAxisUnits);
+
+        console.log("[jc] topAreaInPixels " + topAreaInPixels);
+        console.log("[jc] bottomAreaInPixels " + bottomAreaInPixels);
+        console.log("[jc] plotAreaSizeInPixels " + plotAreaSizeInPixels);
+
+        console.log("[jc] calculatedMin " + calculatedMin);
+        console.log("[jc] calculatedMax " + calculatedMax);
+
+
+        // Calculate the unified area above temperatures with proportional buffer
+        const tempRange = maxValue - minValue;
+        const bufferSpace = Math.max(this.config.fontSize, tempRange * 0.6); // Proportional to temp range
+        const aboveTemperatureArea = maxValue + (maxValue - minValue) * iconBelowMargin + bufferSpace;
+        
+        // Position elements dynamically based on what's enabled
+        //const iconSpace = 50 * PixelsToAxisUnits;
+        //const textSpace = this.config.fontSize * PixelsToAxisUnits;
+        //const iconSpacing = Math.max(this.config.fontSize * 1.5, tempRange * 0.2); // Icons need more space, proportional to temp range
+        const iconSpacing = ((iconSize * 0.5 + this.config.fontSize * 0.5) * PixelsToAxisUnits);  // next thing can start half a text line below
+        const textSpacing = (this.config.fontSize * 1.0 * PixelsToAxisUnits); // text is drawn at center, so we need to move it half a text line below
+
+        console.log("[jc] aboveTemperatureArea " + aboveTemperatureArea);
+
+        console.log("[jc] minValue " + minValue);
+        console.log("[jc] maxValue " + maxValue);
+        maybeMin = (minValue - (maxValue - minValue) * tempRainMargin);
+        maybeMin = maybeMin - (maxValue - minValue) * 1.5;
+
+
+        console.log("[jc] maybeMin? " + maybeMin);
+        console.log("[jc] tempRange " + tempRange);
+        console.log("[jc] bufferSpace " + bufferSpace);
+
+        console.log("[jc] iconSpacing " + iconSpacing);
+        console.log("[jc] textSpacing " + textSpacing);
+
+        console.log("[jc] PixelsToAxisUnits " + PixelsToAxisUnits);
+
+
+        // Position icons at the top if enabled
+        let currentY = calculatedMax;
+        const iconY = this.config.showIcon ? currentY - (iconSize * 0.5 * PixelsToAxisUnits) : null;
+        if (this.config.showIcon) {
+            currentY = iconY;
+            currentY -=  ((iconSize * 0.5 + this.config.fontSize * 0.25) * PixelsToAxisUnits);  // next thing can start half a text line below;
+        }
+        console.log("[jc] currentY after icon " + currentY);
+        
+        // Position pop below icons if enabled
+        const popY = this.config.showPop ? currentY - (this.config.fontSize * 0.5 * PixelsToAxisUnits) : null; // remember this is center
+        if (this.config.showPop) {
+            currentY = popY;
+            currentY -= textSpacing;
+            currentY -= (this.config.fontSize * 0.25 * PixelsToAxisUnits); 
+        }
+        console.log("[jc] currentY after pop " + currentY);
+        
+        // Position wind below pop if enabled
+        const windY = this.config.showWind ? currentY - (this.config.fontSize * 0.5 * PixelsToAxisUnits) : null;
+
+        // Create dummy line for icons (only if enabled)
+        if (this.config.showIcon) {
+            for (let i = 0; i < minTemps.length; i++) {
+                iconLine.push(iconY);
+                icons.push(this.getIconImage(iconIDs[i]));
+            }
+        }
+
+        // Create dummy line for precipitation probability (only if enabled)
+        if (this.config.showPop) {
+            for (let i = 0; i < minTemps.length; i++) {
+                popLine.push(popY);
+            }
+        }
+
+        // Create dummy line for wind (only if enabled)
+        if (this.config.showWind) {
+            for (let i = 0; i < minTemps.length; i++) {
+                windLine.push(windY);
+            }
         }
 
         const datasets = [];
@@ -696,9 +927,6 @@ Module.register("MMM-WeatherChart", {
                 color: this.config.color,
                 align: "bottom",
                 offset: this.config.datalabelsOffset,
-                font: {
-                    weight: this.config.fontWeight,
-                },
                 display: this.config.datalabelsDisplay,
                 formatter: function (value) {
                     let place = 10 ** self.config.datalabelsRoundDecimalPlace;
@@ -717,9 +945,6 @@ Module.register("MMM-WeatherChart", {
                 color: this.config.color,
                 align: "top",
                 offset: this.config.datalabelsOffset,
-                font: {
-                    weight: this.config.fontWeight,
-                },
                 display: this.config.datalabelsDisplay,
                 formatter: function (value) {
                     let place = 10 ** self.config.datalabelsRoundDecimalPlace;
@@ -740,9 +965,6 @@ Module.register("MMM-WeatherChart", {
                     color: this.config.colorPressure,
                     align: "top",
                     offset: this.config.datalabelsOffset,
-                    font: {
-                        weight: this.config.fontWeight,
-                    },
                     display: this.config.datalabelsDisplay,
                     formatter: function (value) {
                         let place =
@@ -767,6 +989,51 @@ Module.register("MMM-WeatherChart", {
                 yAxisID: "y1",
             });
         }
+        if (this.config.showPop) {
+            datasets.push({
+                label: "Precipitation Probability",
+                borderWidth: 0,
+                data: popLine,
+                pointStyle: "rect",
+                pointRadius: 0,
+                datalabels: {
+                    display: true,
+                    color: this.config.colorPop,
+                    align: "center",
+                    offset: 0,
+                    formatter: function (value, context) {
+                        let popValue = pops[context.dataIndex];
+                        if (popValue === null) return ""; // Don't show anything if data is missing
+                        let percentage = Math.round(popValue * 100);
+                        return percentage + "%";
+                    },
+                },
+                yAxisID: "y1",
+            });
+        }
+        if (this.config.showWind) {
+            let self = this;
+            datasets.push({
+                label: "Wind Speed & Direction",
+                borderWidth: 0,
+                data: windLine,
+                pointStyle: "rect",
+                pointRadius: 0,
+                datalabels: {
+                    display: true,
+                    color: this.config.colorWind,
+                    align: "center",
+                    offset: 0,
+                    formatter: function (value, context) {
+                        let windSpeedValue = windSpeeds[context.dataIndex];
+                        let windDirectionValue = windDirections[context.dataIndex];
+                        if (windSpeedValue === null) return ""; // Don't show anything if data is missing
+                        return self.formatWind(windSpeedValue, windDirectionValue);
+                    },
+                },
+                yAxisID: "y1",
+            });
+        }
         if (this.config.showRain) {
             if (this.config.showZeroRain || maxRain > 0) {
                 datasets.push({
@@ -779,13 +1046,10 @@ Module.register("MMM-WeatherChart", {
                         color: this.config.color,
                         align: "top",
                         offset: this.config.datalabelsOffset,
-                        font: {
-                            weight: this.config.fontWeight,
-                        },
                         display: this.config.datalabelsDisplay,
                         formatter: function (value) {
                             let place =
-                                10 ** self.config.datalabelsRoundDecimalPlace;
+                                10 ** self.config.precipitationRoundDecimalPlace;
                             let label = Math.round(value * place) / place;
                             return self.config.showZeroRain || value > 0
                                 ? label
@@ -811,13 +1075,10 @@ Module.register("MMM-WeatherChart", {
                         display: this.config.showRain ? false : true,
                         align: "top",
                         offset: this.config.datalabelsOffset,
-                        font: {
-                            weight: this.config.fontWeight,
-                        },
                         display: this.config.datalabelsDisplay,
                         formatter: function (value) {
                             let place =
-                                10 ** self.config.datalabelsRoundDecimalPlace;
+                                10 ** self.config.precipitationRoundDecimalPlace;
                             let label = Math.round(value * place) / place;
                             return self.config.showZeroSnow || value > 0
                                 ? label
@@ -839,9 +1100,9 @@ Module.register("MMM-WeatherChart", {
         minPressure = this.getMin(pressures);
         maxPressure = this.getMax(pressures);
 
-        // Set Y-Axis range not to overlap each other
-        let y1_max = iconLine[0] + (maxValue - minValue) * iconTopMargin,
-            y1_min = minValue - (maxValue - minValue) * tempRainMargin,
+        // Set Y-Axis range using the unified area approach
+        //let y1_max = aboveTemperatureArea + (maxValue - minValue) * iconTopMargin,
+            //y1_min = minValue - (maxValue - minValue) * tempRainMargin,
             y2_max =
                 Math.max(maxRain, maxSnow, this.config.rainMinHeight) *
                 (2 + (iconTopMargin + iconBelowMargin + tempRainMargin) * 2),
@@ -852,7 +1113,9 @@ Module.register("MMM-WeatherChart", {
                 (maxPressure - minPressure) *
                     ((iconTopMargin + iconBelowMargin) / 2);
 
-        if (showRainSnow) y1_min = y1_min - (maxValue - minValue);
+        //if (showRainSnow) y1_min = y1_min - (maxValue - minValue) * 1.5;
+        y1_max = calculatedMax;
+        y1_min = calculatedMin;
         const ranges = {
             y1: {
                 min: y1_min,
@@ -881,6 +1144,10 @@ Module.register("MMM-WeatherChart", {
                 this.config.height +
                 "; width: " +
                 this.config.width +
+                "; font-size: " +
+                this.config.fontSize +
+                "px; font-weight: " +
+                this.config.fontWeight +
                 ";"
         );
         if (this.weatherdata) {
@@ -894,6 +1161,11 @@ Module.register("MMM-WeatherChart", {
                 dataset = this.getDailyDataset();
             }
 
+            // Get the actual font family from MagicMirror's body element
+            const bodyStyle = window.getComputedStyle(document.body);
+            const mmFontFamily = bodyStyle.fontFamily;
+            
+            Chart.defaults.font.family = mmFontFamily;
             Chart.defaults.font.size = this.config.fontSize;
             Chart.defaults.font.weight = this.config.fontWeight;
             Chart.defaults.color = this.config.color;
@@ -946,7 +1218,15 @@ Module.register("MMM-WeatherChart", {
                             offset: true,
                         },
                         y1: {
-                            display: false,
+                            display: true,
+                            grid: {
+                                display: true,
+                                color: 'rgba(255, 255, 255, 0.3)',
+                            },
+                            ticks: {
+                                display: true,
+                                color: 'rgba(255, 255, 255, 0.8)',
+                            },
                             min: dataset.ranges.y1.min,
                             max: dataset.ranges.y1.max,
                         },
