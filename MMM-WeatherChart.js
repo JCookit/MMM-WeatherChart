@@ -65,6 +65,9 @@ Module.register("MMM-WeatherChart", {
         colorWind: "rgba(255, 255, 255, 1)",
         windRowHeight: 20,
         windUnit: "auto", // "auto", "mph", "km/h", "m/s", "knots"
+        showUvi: false,
+        colorUvi: "rgba(255, 255, 255, 1)",
+        uviRowHeight: 20,
     },
 
     requiresVersion: "2.15.0",
@@ -167,25 +170,43 @@ Module.register("MMM-WeatherChart", {
     },
 
     formatWind: function (windSpeed, windDirection) {
-        // API returns wind speed in m/s for all unit types
+        // API returns wind speed based on units parameter:
+        // imperial: mph, metric: m/s, standard: m/s
         let convertedSpeed;
         if (this.config.windUnit === "auto") {
             // Use same unit system as main weather data
             if (this.config.units === "imperial") {
-                convertedSpeed = windSpeed * 2.237; // m/s to mph
+                convertedSpeed = windSpeed; // Already in mph
             } else if (this.config.units === "metric") {
                 convertedSpeed = windSpeed * 3.6; // m/s to km/h
             } else {
                 convertedSpeed = windSpeed; // standard (m/s)
             }
         } else if (this.config.windUnit === "mph") {
-            convertedSpeed = windSpeed * 2.237;
+            if (this.config.units === "imperial") {
+                convertedSpeed = windSpeed; // Already in mph
+            } else {
+                convertedSpeed = windSpeed * 2.237; // m/s to mph
+            }
         } else if (this.config.windUnit === "km/h") {
-            convertedSpeed = windSpeed * 3.6;
+            if (this.config.units === "imperial") {
+                convertedSpeed = windSpeed * 1.609; // mph to km/h
+            } else {
+                convertedSpeed = windSpeed * 3.6; // m/s to km/h
+            }
         } else if (this.config.windUnit === "knots") {
-            convertedSpeed = windSpeed * 1.944;
+            if (this.config.units === "imperial") {
+                convertedSpeed = windSpeed * 0.868; // mph to knots
+            } else {
+                convertedSpeed = windSpeed * 1.944; // m/s to knots
+            }
         } else {
-            convertedSpeed = windSpeed; // m/s
+            // m/s requested
+            if (this.config.units === "imperial") {
+                convertedSpeed = windSpeed * 0.447; // mph to m/s
+            } else {
+                convertedSpeed = windSpeed; // Already m/s
+            }
         }
         
         // Apply decimal precision using the general datalabels option
@@ -290,7 +311,8 @@ Module.register("MMM-WeatherChart", {
             pressures = [],
             pops = [],
             windSpeeds = [],
-            windDirections = [];
+            windDirections = [],
+            uvis = [];
 
         data.sort(function (a, b) {
             if (a.dt < b.dt) return -1;
@@ -353,6 +375,7 @@ Module.register("MMM-WeatherChart", {
             pops.push(data[i].pop !== undefined ? data[i].pop : null); // precipitation probability (0-1) or null if missing
             windSpeeds.push(data[i].wind_speed || 0);
             windDirections.push(data[i].wind_deg || 0);
+            uvis.push(data[i].uvi !== undefined ? data[i].uvi : null);
         }
 
         const minTemp = this.getMin(temps),
@@ -364,7 +387,8 @@ Module.register("MMM-WeatherChart", {
             iconLine = [],
             icons = [],
             popLine = [],
-            windLine = [];
+            windLine = [],
+            uviLine = [];
 
         let showRainSnow = false;
         if (this.config.showRain || this.config.showSnow) {
@@ -385,6 +409,7 @@ Module.register("MMM-WeatherChart", {
             (this.config.showIcon ? (iconSize*1.0 + fontSize * 0.5) : 0)
             + (this.config.showPop ? fontSize * 1.2 : 0)
             + (this.config.showWind ? fontSize * 1.2 : 0)
+            + (this.config.showUvi ? fontSize * 1.2 : 0)
             + (fontSize * 2.0);  // always allow for the high temp data labels on top
 
         const bottomAreaInPixels = fontSize * 2.0;
@@ -436,6 +461,13 @@ Module.register("MMM-WeatherChart", {
         
         // Position wind below pop if enabled
         const windY = this.config.showWind ? currentY - (fontSize * 0.5 * PixelsToAxisUnits) : null;
+        if (this.config.showWind) {
+            currentY = windY;
+            currentY -= (fontSize * 0.7 * PixelsToAxisUnits); 
+        }
+        
+        // Position UV Index below wind if enabled
+        const uviY = this.config.showUvi ? currentY - (fontSize * 0.5 * PixelsToAxisUnits) : null;
 
         // Create dummy line for icons (only if enabled)
         if (this.config.showIcon) {
@@ -456,6 +488,13 @@ Module.register("MMM-WeatherChart", {
         if (this.config.showWind) {
             for (let i = 0; i < temps.length; i++) {
                 windLine.push(windY);
+            }
+        }
+
+        // Create dummy line for UV Index (only if enabled)
+        if (this.config.showUvi) {
+            for (let i = 0; i < temps.length; i++) {
+                uviLine.push(uviY);
             }
         }
 
@@ -573,6 +612,29 @@ Module.register("MMM-WeatherChart", {
                         let windDirectionValue = windDirections[context.dataIndex];
                         if (windSpeedValue === null) return ""; // Don't show anything if data is missing
                         return self.formatWind(windSpeedValue, windDirectionValue);
+                    },
+                },
+                yAxisID: "y1",
+            });
+        }
+        if (this.config.showUvi) {
+            let self = this;
+            datasets.push({
+                label: "UV Index",
+                borderWidth: 0,
+                data: uviLine,
+                pointStyle: "rect",
+                pointRadius: 0,
+                datalabels: {
+                    display: true,
+                    color: this.config.colorUvi,
+                    align: "center",
+                    offset: 0,
+                    formatter: function (value, context) {
+                        let uviValue = uvis[context.dataIndex];
+                        if (uviValue === null) return ""; // Don't show anything if data is missing
+                        let place = 10 ** self.config.datalabelsRoundDecimalPlace;
+                        return Math.round(uviValue * place) / place;
                     },
                 },
                 yAxisID: "y1",
@@ -719,7 +781,8 @@ Module.register("MMM-WeatherChart", {
             pressures = [],
             pops = [],
             windSpeeds = [],
-            windDirections = [];
+            windDirections = [],
+            uvis = [];
 
         data.sort(function (a, b) {
             if (a.dt < b.dt) return -1;
@@ -765,6 +828,7 @@ Module.register("MMM-WeatherChart", {
             pops.push(data[i].pop !== undefined ? data[i].pop : null); // precipitation probability (0-1) or null if missing
             windSpeeds.push(data[i].wind_speed !== undefined ? data[i].wind_speed : null);
             windDirections.push(data[i].wind_deg !== undefined ? data[i].wind_deg : null);
+            uvis.push(data[i].uvi !== undefined ? data[i].uvi : null);
 
                         
             // Debug wind data  
@@ -781,7 +845,8 @@ Module.register("MMM-WeatherChart", {
             iconLine = [],
             icons = [],
             popLine = [],
-            windLine = [];
+            windLine = [],
+            uviLine = [];
 
         let showRainSnow = false;
         if (this.config.showRain || this.config.showSnow) {
@@ -806,6 +871,7 @@ Module.register("MMM-WeatherChart", {
             (this.config.showIcon ? (iconSize*1.0 + fontSize * 0.5) : 0)
             + (this.config.showPop ? fontSize * 1.2 : 0)
             + (this.config.showWind ? fontSize * 1.2 : 0)
+            + (this.config.showUvi ? fontSize * 1.2 : 0)
             + (fontSize * 2.0);  // always allow for the high temp data labels on top
 
         const bottomAreaInPixels = fontSize * 2.0;
@@ -858,6 +924,13 @@ Module.register("MMM-WeatherChart", {
         
         // Position wind below pop if enabled
         const windY = this.config.showWind ? currentY - (fontSize * 0.5 * PixelsToAxisUnits) : null;
+        if (this.config.showWind) {
+            currentY = windY;
+            currentY -= (fontSize * 0.7 * PixelsToAxisUnits); 
+        }
+        
+        // Position UV Index below wind if enabled
+        const uviY = this.config.showUvi ? currentY - (fontSize * 0.5 * PixelsToAxisUnits) : null;
 
         // Create dummy line for icons (only if enabled)
         if (this.config.showIcon) {
@@ -878,6 +951,13 @@ Module.register("MMM-WeatherChart", {
         if (this.config.showWind) {
             for (let i = 0; i < minTemps.length; i++) {
                 windLine.push(windY);
+            }
+        }
+
+        // Create dummy line for UV Index (only if enabled)
+        if (this.config.showUvi) {
+            for (let i = 0; i < minTemps.length; i++) {
+                uviLine.push(uviY);
             }
         }
 
@@ -992,6 +1072,29 @@ Module.register("MMM-WeatherChart", {
                         let windDirectionValue = windDirections[context.dataIndex];
                         if (windSpeedValue === null) return ""; // Don't show anything if data is missing
                         return self.formatWind(windSpeedValue, windDirectionValue);
+                    },
+                },
+                yAxisID: "y1",
+            });
+        }
+        if (this.config.showUvi) {
+            let self = this;
+            datasets.push({
+                label: "UV Index",
+                borderWidth: 0,
+                data: uviLine,
+                pointStyle: "rect",
+                pointRadius: 0,
+                datalabels: {
+                    display: true,
+                    color: this.config.colorUvi,
+                    align: "center",
+                    offset: 0,
+                    formatter: function (value, context) {
+                        let uviValue = uvis[context.dataIndex];
+                        if (uviValue === null) return ""; // Don't show anything if data is missing
+                        let place = 10 ** self.config.datalabelsRoundDecimalPlace;
+                        return Math.round(uviValue * place) / place;
                     },
                 },
                 yAxisID: "y1",
