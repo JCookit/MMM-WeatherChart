@@ -25,7 +25,7 @@ Module.register("MMM-WeatherChart", {
         height: "400px",
         width: "450px",
         fontSize: 16,
-        fontWeight: "normal",
+        fontWeight: "bold",
         dataNum: 24,
         timeOffsetHours: 0,
         title: "Weather Forecast",
@@ -407,9 +407,9 @@ Module.register("MMM-WeatherChart", {
 
         const topAreaInPixels = 
             (this.config.showIcon ? (iconSize*1.0 + fontSize * 0.5) : 0)
-            + (this.config.showPop ? fontSize * 1.2 : 0)
-            + (this.config.showWind ? fontSize * 1.2 : 0)
-            + (this.config.showUvi ? fontSize * 1.2 : 0)
+            + (this.config.showPop ? fontSize * 1.5 : 0)
+            + (this.config.showWind ? fontSize * 1.5 : 0)
+            + (this.config.showUvi ? fontSize * 1.5 : 0)
             + (fontSize * 2.0);  // always allow for the high temp data labels on top
 
         const bottomAreaInPixels = fontSize * 2.0;
@@ -417,7 +417,7 @@ Module.register("MMM-WeatherChart", {
         console.log("[jc] height " + parseInt(this.config.height));
 
         const plotAreaSizeInPixels = parseInt(this.config.height) - topAreaInPixels - bottomAreaInPixels;
-        const temperatureRainBufferInPixels = showRainSnow ? fontSize * 3.5 : 0.0;
+        const temperatureRainBufferInPixels = showRainSnow ? fontSize * 4.0 : 0.0;
         const rainAreaPlotAreaPercentage = showRainSnow ? possibleRainShowPlotPercentage : 0.0;
 
         console.log("[jc] topAreaInPixels " + topAreaInPixels);
@@ -447,7 +447,7 @@ Module.register("MMM-WeatherChart", {
         console.log("[jc] iconY " + iconY);
         if (this.config.showIcon) {
             currentY = iconY;
-            currentY -=  ((iconSize * 0.5 + fontSize * 0.2) * PixelsToAxisUnits);  // next thing can start quarter text line below
+            currentY -=  ((iconSize * 0.5 + fontSize * 0.5) * PixelsToAxisUnits);  // next thing can start quarter text line below
         }
         console.log("[jc] currentY after icon " + currentY);
         
@@ -455,7 +455,7 @@ Module.register("MMM-WeatherChart", {
         const popY = this.config.showPop ? currentY - (fontSize * 0.5 * PixelsToAxisUnits) : null; // remember this is center
         if (this.config.showPop) {
             currentY = popY;
-            currentY -= (fontSize * 0.7 * PixelsToAxisUnits); 
+            currentY -= (fontSize * 1.0 * PixelsToAxisUnits); 
         }
         console.log("[jc] currentY after pop " + currentY);
         
@@ -463,7 +463,7 @@ Module.register("MMM-WeatherChart", {
         const windY = this.config.showWind ? currentY - (fontSize * 0.5 * PixelsToAxisUnits) : null;
         if (this.config.showWind) {
             currentY = windY;
-            currentY -= (fontSize * 0.7 * PixelsToAxisUnits); 
+            currentY -= (fontSize * 1.0 * PixelsToAxisUnits); 
         }
         
         // Position UV Index below wind if enabled
@@ -645,11 +645,11 @@ Module.register("MMM-WeatherChart", {
                 datasets.push({
                     label: "Rain Volume",
                     backgroundColor: this.config.fillColor,
-                    borderColor: this.config.color,
+                    borderColor: this.config.colorRain,
                     borderWidth: 1,
-                    pointBackgroundColor: this.config.color,
+                    pointBackgroundColor: this.config.colorRain,
                     datalabels: {
-                        color: this.config.color,
+                        color: this.config.colorRain,
                         align: "top",
                         offset: this.config.datalabelsOffset,
                         display: this.config.datalabelsDisplay,
@@ -673,9 +673,9 @@ Module.register("MMM-WeatherChart", {
                 datasets.push({
                     label: "Snow Volume",
                     backgroundColor: this.config.fillColor,
-                    borderColor: this.config.color,
+                    borderColor: this.config.colorSnow,
                     borderWidth: 1,
-                    pointBackgroundColor: this.config.color,
+                    pointBackgroundColor: this.config.colorSnow,
                     datalabels: {
                         color: this.config.color,
                         display: this.config.showRain ? false : true,
@@ -830,12 +830,6 @@ Module.register("MMM-WeatherChart", {
             windDirections.push(data[i].wind_deg !== undefined ? data[i].wind_deg : null);
             uvis.push(data[i].uvi !== undefined ? data[i].uvi : null);
 
-                        
-            // Debug wind data  
-            console.log("[Wind Debug Daily] Day " + i + ":");
-            console.log("  wind_speed: " + data[i].wind_speed + " m/s");
-            console.log("  wind_gust: " + (data[i].wind_gust || "not available") + " m/s");
-            console.log("  wind_deg: " + data[i].wind_deg + "°");
         }
 
         const minValue = this.getMin(minTemps),
@@ -868,10 +862,10 @@ Module.register("MMM-WeatherChart", {
         console.log("[jc] fontSize " + fontSize);
 
         const topAreaInPixels = 
-            (this.config.showIcon ? (iconSize*1.0 + fontSize * 0.5) : 0)
-            + (this.config.showPop ? fontSize * 1.2 : 0)
-            + (this.config.showWind ? fontSize * 1.2 : 0)
-            + (this.config.showUvi ? fontSize * 1.2 : 0)
+            (this.config.showIcon ? (iconSize*1.0 + fontSize * 0.7) : 0)
+            + (this.config.showPop ? fontSize * 1.5 : 0)
+            + (this.config.showWind ? fontSize * 1.5 : 0)
+            + (this.config.showUvi ? fontSize * 1.5 : 0)
             + (fontSize * 2.0);  // always allow for the high temp data labels on top
 
         const bottomAreaInPixels = fontSize * 2.0;
@@ -879,7 +873,7 @@ Module.register("MMM-WeatherChart", {
         console.log("[jc] height " + parseInt(this.config.height));
 
         const plotAreaSizeInPixels = parseInt(this.config.height) - topAreaInPixels - bottomAreaInPixels;
-        const temperatureRainBufferInPixels = showRainSnow ? fontSize * 3.5 : 0.0;
+        const temperatureRainBufferInPixels = showRainSnow ? fontSize * 4.0 : 0.0;
         const rainAreaPlotAreaPercentage = showRainSnow ? possibleRainShowPlotPercentage : 0.0;
 
         console.log("[jc] topAreaInPixels " + topAreaInPixels);
@@ -910,7 +904,7 @@ Module.register("MMM-WeatherChart", {
         console.log("[jc] iconY " + iconY);
         if (this.config.showIcon) {
             currentY = iconY;
-            currentY -=  ((iconSize * 0.5 + fontSize * 0.2) * PixelsToAxisUnits);  // next thing can start quarter text line below
+            currentY -=  ((iconSize * 0.5 + fontSize * 0.5) * PixelsToAxisUnits);  // next thing can start quarter text line below
         }
         console.log("[jc] currentY after icon " + currentY);
         
@@ -918,7 +912,7 @@ Module.register("MMM-WeatherChart", {
         const popY = this.config.showPop ? currentY - (fontSize * 0.5 * PixelsToAxisUnits) : null; // remember this is center
         if (this.config.showPop) {
             currentY = popY;
-            currentY -= (fontSize * 0.7 * PixelsToAxisUnits); 
+            currentY -= (fontSize * 1.0 * PixelsToAxisUnits); 
         }
         console.log("[jc] currentY after pop " + currentY);
         
@@ -926,7 +920,7 @@ Module.register("MMM-WeatherChart", {
         const windY = this.config.showWind ? currentY - (fontSize * 0.5 * PixelsToAxisUnits) : null;
         if (this.config.showWind) {
             currentY = windY;
-            currentY -= (fontSize * 0.7 * PixelsToAxisUnits); 
+            currentY -= (fontSize * 1.0 * PixelsToAxisUnits); 
         }
         
         // Position UV Index below wind if enabled
@@ -967,7 +961,7 @@ Module.register("MMM-WeatherChart", {
             borderColor: this.config.colorMin,
             pointBackgroundColor: this.config.colorMin,
             datalabels: {
-                color: this.config.color,
+                color: this.config.colorMin,
                 align: "bottom",
                 offset: this.config.datalabelsOffset,
                 display: this.config.datalabelsDisplay,
@@ -985,7 +979,7 @@ Module.register("MMM-WeatherChart", {
             borderColor: this.config.colorMax,
             pointBackgroundColor: this.config.colorMax,
             datalabels: {
-                color: this.config.color,
+                color: this.config.colorMax,
                 align: "top",
                 offset: this.config.datalabelsOffset,
                 display: this.config.datalabelsDisplay,
@@ -1109,7 +1103,7 @@ Module.register("MMM-WeatherChart", {
                     borderWidth: 1,
                     pointBackgroundColor: this.config.colorRain,
                     datalabels: {
-                        color: this.config.color,
+                        color: this.config.colorRain,
                         align: "top",
                         offset: this.config.datalabelsOffset,
                         display: this.config.datalabelsDisplay,
@@ -1276,6 +1270,7 @@ Module.register("MMM-WeatherChart", {
                     },
                     scales: {
                         x: {
+                            position: "top",
                             grid: {
                                 display: false,
                                 borderWidth: 0,
