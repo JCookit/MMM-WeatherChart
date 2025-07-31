@@ -29,7 +29,7 @@ Module.register("MMM-WeatherChart", {
         dataNum: 24,
         timeOffsetHours: 0,
         title: "Weather Forecast",
-        iconURLBase: "https://openweathermap.org/img/wn/",
+        iconURLBase: "modules/MMM-WeatherChart/icons/", // "https://openweathermap.org/img/wn/",
         dataType: "hourly",
         nightBorderDash: [5, 1],
         pressureBorderDash: [5, 1],
@@ -235,6 +235,8 @@ Module.register("MMM-WeatherChart", {
             } else {
                 iconImage.src = this.config.iconURLBase + iconId + ".png";
             }
+            iconImage.width = 30;
+            iconImage.height = 30;
         }
         return iconImage;
     },
@@ -1264,6 +1266,15 @@ Module.register("MMM-WeatherChart", {
                         text: this.config.title,
                     },
                     plugins: {
+                        title: {
+                            display: true,
+                            text: this.config.title,
+                            color: this.config.color,
+                            font: {
+                                size: this.config.fontSize,
+                                weight: this.config.fontWeight
+                            }
+                        },
                         legend: {
                             display: false,
                         },
