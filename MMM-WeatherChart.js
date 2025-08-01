@@ -23,7 +23,7 @@ Module.register("MMM-WeatherChart", {
         chartjsVersion: "3.9.1",
         chartjsDatalabelsVersion: "2.2.0",
         height: "400px",
-        width: "450px",
+        width: "100%", // "450px",
         fontSize: 16,
         fontWeight: "bold",
         dataNum: 24,
@@ -412,7 +412,7 @@ Module.register("MMM-WeatherChart", {
             + (this.config.showPop ? fontSize * 1.5 : 0)
             + (this.config.showWind ? fontSize * 1.5 : 0)
             + (this.config.showUvi ? fontSize * 1.5 : 0)
-            + (fontSize * 2.0);  // always allow for the high temp data labels on top
+            + (fontSize * 2.5);  // always allow for the high temp data labels on top
 
         const bottomAreaInPixels = fontSize * 2.0;
 
@@ -660,7 +660,7 @@ Module.register("MMM-WeatherChart", {
                                 10 ** self.config.precipitationRoundDecimalPlace;
                             let label = Math.round(value * place) / place;
                             return self.config.showZeroRain || value > 0
-                                ? label
+                                ? label + "\""
                                 : "";
                         },
                     },
@@ -868,7 +868,7 @@ Module.register("MMM-WeatherChart", {
             + (this.config.showPop ? fontSize * 1.5 : 0)
             + (this.config.showWind ? fontSize * 1.5 : 0)
             + (this.config.showUvi ? fontSize * 1.5 : 0)
-            + (fontSize * 2.0);  // always allow for the high temp data labels on top
+            + (fontSize * 2.5);  // always allow for the high temp data labels on top
 
         const bottomAreaInPixels = fontSize * 2.0;
 
@@ -1114,7 +1114,7 @@ Module.register("MMM-WeatherChart", {
                                 10 ** self.config.precipitationRoundDecimalPlace;
                             let label = Math.round(value * place) / place;
                             return self.config.showZeroRain || value > 0
-                                ? label
+                                ? label + "\""
                                 : "";
                         },
                     },
