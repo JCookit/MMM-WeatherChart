@@ -1262,12 +1262,12 @@ Module.register("MMM-WeatherChart", {
                     responsive: true,
                     tension: this.config.curveTension,
                     title: {
-                        display: true,
+                        display: (!!this.config.title),
                         text: this.config.title,
                     },
                     plugins: {
                         title: {
-                            display: true,
+                            display: (!!this.config.title),
                             text: this.config.title,
                             color: this.config.color,
                             font: {
